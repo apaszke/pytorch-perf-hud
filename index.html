@@ -41,23 +41,38 @@
       for (var i = 0; i < commits.length; ++i) {
         x[i] = i + 1;
       }
+      var hashes = new Array(commits.length);
+      for (var i = 0; i < commits.length; ++i) {
+        hashes[i] = commits[i]['hash'].slice(0, 10);
+      }
 
-      var any_commit = commits[0];
-      for (var test_group_name in any_commit['times']) {
-        var test_names = Object.keys(any_commit['times'][test_group_name]);
+      var benchmarks = {};
+      for (var i = 0; i < commits.length; ++i) {
+        var results = commits[i]['times'];
+        for (var group_name in results) {
+          var group = benchmarks[group_name] = benchmarks[group_name] || new Set();
+          var result_group = results[group_name] || {};
+          for (var benchmark_name in result_group) {
+            group.add(benchmark_name);
+          }
+        }
+      }
+
+      for (var test_group_name in benchmarks) {
+        var test_names = [...benchmarks[test_group_name]];
         var test_data = test_names.map(function(test_name) {
-          return { x: x, y: [], name: test_name, mode: 'lines' };
+          return { x: x, y: [], text: [], name: test_name, mode: 'lines' };
         });
-        for (var ci = 0; ci < commits.length; ++ci) {
-          var commit = commits[ci];
+        for (var ci in commits) {
+          var results = commits[ci]['times'] || {};
+          var group = results[test_group_name] || {};
           for (var i = 0; i < test_names.length; ++i) {
             var test_name = test_names[i];
-            test_data[i].y.push(commit['times'][test_group_name][test_name]);
+            test_data[i].y.push(group[test_name]);
           }
         }
         $('#plots').append('<h3>' + test_group_name + '</h3><div id="' + test_group_name + '"></div>');
-        var layout = {};
-        console.log(test_data);
+        var layout = { yaxis: {rangemode: 'tozero'}, margin: {t: 50, b:80}, xaxis: {tickvals: x, ticktext: hashes} };
         Plotly.newPlot(test_group_name, test_data, layout);
       }
     </script>
