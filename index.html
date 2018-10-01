@@ -45,7 +45,6 @@
           'rgba(188,189,34, ' + CONF_OPACITY + ')',
           'rgba(23,190,207, ' + CONF_OPACITY + ')',
       ];
-      console.log(CONF_COLORS);
 
       var x = new Array(commits.length);
       for (var i = 0; i < commits.length; ++i) {
@@ -67,8 +66,9 @@
           }
         }
       }
+      var benchmark_names = Object.keys(benchmarks).sort();
 
-      for (var test_group_name in benchmarks) {
+      benchmark_names.forEach(function(test_group_name) {
         var test_names = [...benchmarks[test_group_name]];
         var test_data = test_names.map(function(test_name) {
           return { x: x, y: [], text: [], name: test_name, mode: 'lines', type: 'scatter', hoverinfo: 'name+y', results: [], legendgroup: test_name };
@@ -83,28 +83,78 @@
             test_data[i].y.push(test_result[0]);
           }
         }
-        var confidence_data = test_data.map(function(test_data, i) {
-          return {
+
+        var url = new URL(window.location.href);
+        var window_size = url.searchParams.get("smooth");
+        if (window_size !== null) {
+          for (var j = 0; j < test_data.length; ++j) {
+            var trace = test_data[j];
+            for (var i = 0; i < trace.y.length; ++i) {
+              var sum = 0;
+              var cnt = 0;
+              function add_point(i) {
+                if (i >= 0 && i < trace.y.length && trace.y[i] !== undefined) {
+                  sum += trace.y[i];
+                  cnt += 1;
+                }
+              }
+              for (var k = -window_size; k <= window_size; ++k) {
+                add_point(i + k);
+              }
+              if (trace.y[i] !== undefined && cnt > 0) {
+                trace.y[i] = sum / cnt;
+              }
+            }
+          }
+        }
+
+        function make_confidence_trace(x, y, name, i, idx) {
+          var trace = {
             type: 'scatter',
-            x: test_data.x.concat(test_data.x.slice().reverse()),
+            x: [].concat([x[0] - 1e-3], x, x.slice().reverse(), [x[0] - 1e-3]),
             y: [].concat(
-                test_data.results.map(function(r) { return r[0] === undefined ? undefined : r[0] + (STUDENT_COEF * r[1] / Math.sqrt(NUM_ITERS)); }),
-                test_data.results.map(function(r) { return r[0] === undefined ? undefined : r[0] - (STUDENT_COEF * r[1] / Math.sqrt(NUM_ITERS)); }).reverse(),
+                [y[0][0]],
+                y.map(function(r) { return r[0] + (STUDENT_COEF * r[1] / Math.sqrt(NUM_ITERS)); }),
+                y.map(function(r) { return r[0] - (STUDENT_COEF * r[1] / Math.sqrt(NUM_ITERS)); }).reverse(),
+                [y[0][0]]
                ),
-            name: test_data.name + '-ci',
+            name: name + '-ci-' + idx,
             hoverinfo: 'none',
             fill: 'tozerox',
-            legendgroup: test_data.name,
+            legendgroup: name,
             fillcolor: CONF_COLORS[i % CONF_COLORS.length],
             line: {color: "transparent"},
             showlegend: false,
+          };
+          return trace;
+        }
+        var confidence_traces = [];
+        test_data.forEach(function(test_data, i) {
+          var x = [];
+          var results = [];
+          for (var j = 0; j < test_data.x.length; ++j) {
+            var result = test_data.results[j];
+            if (result[0] === undefined) {
+              if (x.length > 0) {
+                confidence_traces.push(make_confidence_trace(x, results, test_data.name, i, j));
+                x = [];
+                results = [];
+              }
+            } else {
+              x.push(test_data.x[j]);
+              results.push(result);
+            }
+          }
+          if (x.length > 0) {
+            confidence_traces.push(make_confidence_trace(x, results, test_data.name, i, j));
           }
         });
-        console.log(confidence_data);
+
+        console.log(confidence_traces);
         console.log(test_data);
         $('#plots').append('<h3>' + test_group_name + '</h3><div class="plot" id="' + test_group_name + '"></div>');
         var layout = {
-          margin: {t: 5, b:80},
+          margin: {t: 30, b:80},
           xaxis: {
             tickvals: x,
             ticktext: hashes,
@@ -118,8 +168,8 @@
           }
         };
 
-        window.plot = Plotly.newPlot(test_group_name, test_data.concat(confidence_data), layout);
-      }
+        window.plot = Plotly.newPlot(test_group_name, test_data.concat(confidence_traces), layout);
+      });
     </script>
   </body>
 </html>
